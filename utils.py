@@ -1,6 +1,10 @@
 
 import numpy as np
 from threading import Thread, Lock
+import time 
+from gym import wrappers
+import os 
+
 
 class EnvWrapper():
     def __init__(self, envs_vec):
@@ -111,7 +115,63 @@ def learning_rate_anealing(num_updates):
     return lr_anealing
 
 
-
+def watch_agent(env, model, image_transformer = None):
+    obs = env.reset()
+    
+    # state = np.stack([obs_small] * 4 , axis = 2) #we creat the first state s0
+    done = False
+    episode_reward = 0
+    if image_transformer is None :
+       state = obs
+    else:
+       state = image_transformer.transform(obs)
+       
+    while not done:
+        env.render()
+        action = model.get_action(state)
+        obs, reward, done, info = env.step(action)
+        if image_transformer is None :
+            state = obs
+        else:
+            state = image_transformer.transform(obs)
+        
+        # Compute total reward
+        episode_reward += reward
+        state = obs
+        time.sleep(0.02)
+    
+    env.close()
+    
+def record_agent(env, model,image_transformer = None, videoNum= 0):
+    if not os.path.isdir('./videos'):  
+        os.makedirs('videos')
+   
+    dire = './videos/' + 'vid_' + str(videoNum)
+    env = wrappers.Monitor(env, dire)
+    obs = env.reset()
+    if image_transformer is None:
+        state = obs 
+    else:    
+        state = image_transformer.transform(obs)
+    # state = np.stack([obs_small] * 4, axis = 2)
+    done = False
+    episode_reward = 0
+    
+    while not done:
+        action = model.get_action(state)
+        obs, reward, done, info = env.step(action)
+        if image_transformer is None:
+            state  = obs
+        else:    
+            state = image_transformer.transform(obs)
+        
+        # next_state = update_state(state, obs_small)
+        
+        episode_reward += reward
+        # state = next_state
+        time.sleep(0.02)
+                
+    print("record video game in folder video %s / " % 'vid_' + str(videoNum), "episode reward: ", episode_reward)
 # import gym 
 # envs = [gym.make('CartPole-v1') for i in range(4)]
 # envswr = EnvWrapperThread(envs)

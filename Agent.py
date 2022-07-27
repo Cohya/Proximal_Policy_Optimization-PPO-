@@ -2,7 +2,9 @@
 import tensorflow as tf 
 import tensorflow_probability as tfp
 import matplotlib.pyplot as plt 
-
+from threading import Thread, Lock 
+import os 
+import pickle 
 
 class Agent():
     def __init__(self, actor_net, critic_net, model,  action_distribution = tfp.distributions.Categorical):
@@ -14,6 +16,10 @@ class Agent():
         self.critic = critic_net
         self.actor = actor_net
         self.distribution = action_distribution
+        
+        self.trainable_params  = []
+        self.trainable_params += self.critic.trainable_param
+        self.trainable_params += self.actor.trainable_param
         
         
     def get_value(self,x):
@@ -38,32 +44,50 @@ class Agent():
 
         return action, probs.log_prob(action), probs.entropy(), critic
     
-    def test(self, number_of_games, env):
+    def play_one(self, env):
+        s = env.reset()
+        cummulative_reward = 0
+        done = False
         
-        rewards = []
+        while not done:
+            a = self.get_action(s)
+            s_tag, r, done, _ = env.step(a)
+            cummulative_reward += r
+            s = s_tag
         
-        for game in range(number_of_games):
-            s = env.reset()
-            cummulative_reward = 0
-            done = False
-            while not done:
-                action = self.get_action(s)
-                next_obs, r, done, _ = env.step(action)
-                cummulative_reward += r
-                s = next_obs
-            
-            rewards.append(cummulative_reward)
-            
-        return rewards
+        self.rewards_all_games.append(cummulative_reward)
         
     
-    def watch_agent(self):
-        pass
+    def test(self, number_of_games, env):
+        self.rewards_all_games = []
+        for game in range(number_of_games):
+            t = Thread(target = self.play_one, 
+                       args = ([env]))
+            t.start()
+            t.join()
+            
+        return  self.rewards_all_games 
+        
     
     def save_weights(self):
-        pass
+        if not os.path.isdir('Weights'):
+            os.makedirs('Weights')
+        
+        with open('Weights/weights.pickle', 'wb') as file:
+            pickle.dump(self.trainable_params, file)
+        
+        print("Weights were saved successfully!")
+        
+    def load_weights(self, weight_file):
+        with open(weight_file, 'rb') as file:
+            weights_loaded = pickle.load(file)
             
+        for w1, w2 in zip(self.trainable_params, weights_loaded):
+            w1.assign(w2)
             
+        print("Weights were loaded successfully!")
+        
+    
     def train(self, environment, NUM_OF_ENVS,num_of_steps = 128, lr = 0.00025,
               aneal_lr = True, total_timesteps = 25000 , num_of_mini_batches = 4,
               update_epochs = 4, gae =True, norm_advantage = True, clip_vloss = True,
@@ -72,7 +96,7 @@ class Agent():
               target_based_kl = None, verbose = True, plot_graphs = True, use_threding = True):
         
         
-        (loss_vec, kl_vec, all_episodes_rewards, explained_var_vec) = self.model.train(
+        (self.loss_vec, self.kl_vec, self.all_episodes_rewards, self.explained_var_vec) = self.model.train(
                                                                     environment = environment,
                                                                     NUM_OF_ENVS = NUM_OF_ENVS,
                                                                     num_of_steps = num_of_steps,
@@ -94,27 +118,30 @@ class Agent():
                                                                     target_based_kl = target_based_kl,
                                                                     verbose = verbose,
                                                                     use_threding = use_threding )
+        print("Training is finished!")
         
         if plot_graphs:
+            plt.rcParams["font.family"] = "Times New Roman"
+            plt.rcParams['font.size'] = '12'
             plt.figure(1)
-            plt.plot(loss_vec)
-            plt.ylabel('loss')
-            plt.xlabel('step')
+            plt.plot(self.loss_vec)
+            plt.ylabel('Loss', fontsize=16)
+            plt.xlabel('Step', fontsize=16)
             
             plt.figure(2)
-            plt.plot(kl_vec)
-            plt.ylabel(r'$KL-divergence between \frac{\pi_{\theta_{new}}}{\pi_{\theta_{old}}}$')
-            plt.xlabel('step')
+            plt.plot(self.kl_vec)
+            plt.ylabel(r'$KL-divergence between \frac{\pi_{\theta_{new}}}{\pi_{\theta_{old}}}$', fontsize=16)
+            plt.xlabel('Step', fontsize=16)
             
             plt.figure(3)
-            plt.plot(all_episodes_rewards)
-            plt.ylabel('Episodes Reward')
-            plt.xlabel('step')
+            plt.plot(self.all_episodes_rewards)
+            plt.ylabel('Episodes Reward', fontsize=16)
+            plt.xlabel('Step', fontsize=16)
             
             plt.figure(4)
-            plt.plot(explained_var_vec)
-            plt.ylabel('explained_var_vec')
-            plt.xlabel('step')
+            plt.plot(self.explained_var_vec)
+            plt.ylabel('Explained_var_vec', fontsize=16)
+            plt.xlabel('Step', fontsize=16)
             
             
         
